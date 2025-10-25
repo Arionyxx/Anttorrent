@@ -3,7 +3,7 @@ import { X, FolderOpen, Link as LinkIcon, FileText, Check, Minus } from 'lucide-
 
 interface AddTorrentModalProps {
   onClose: () => void
-  onAddTorrent: (magnetOrPath: string, selectedFiles?: number[]) => void
+  onAddTorrent: (magnetOrPath: string, options?: { selectedFiles?: number[]; path?: string }) => void
   defaultPath: string
 }
 
@@ -37,7 +37,7 @@ const AddTorrentModal: React.FC<AddTorrentModalProps> = ({
   const handleSelectFile = async () => {
     const files = await window.electron.selectTorrentFile()
     if (files && files.length > 0) {
-      files.forEach(file => onAddTorrent(file))
+      files.forEach(file => onAddTorrent(file, { path: savePath }))
       onClose()
     }
   }
@@ -82,7 +82,10 @@ const AddTorrentModal: React.FC<AddTorrentModalProps> = ({
   const handleSubmit = () => {
     if (activeTab === 'magnet' && magnetUrl.trim()) {
       const selectedIndices = showFileSelection ? Array.from(selectedFiles) : undefined
-      onAddTorrent(magnetUrl.trim(), selectedIndices)
+      onAddTorrent(magnetUrl.trim(), {
+        selectedFiles: selectedIndices,
+        path: savePath
+      })
       onClose()
     }
   }

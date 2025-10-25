@@ -303,6 +303,21 @@ export class TorrentManager {
     return this.client.torrents.map((torrent: any) => {
       const isPaused = this.pausedTorrents.has(torrent.infoHash)
       
+      // Get the actual download path - for multi-file torrents, it's path + name
+      // For single file torrents, it's just the file path
+      let actualPath = torrent.path || ''
+      if (torrent.files && torrent.files.length > 0) {
+        // Use the first file's full path to determine the actual download location
+        const firstFilePath = join(torrent.path, torrent.files[0].path)
+        // For multi-file torrents, files are in a subfolder
+        if (torrent.files.length > 1) {
+          actualPath = join(torrent.path, torrent.name)
+        } else {
+          // For single file, use the file's directory
+          actualPath = firstFilePath
+        }
+      }
+      
       return {
         infoHash: torrent.infoHash,
         name: torrent.name || 'Unknown',
@@ -324,7 +339,7 @@ export class TorrentManager {
           downloaded: file.downloaded,
           progress: file.progress
         })),
-        path: torrent.path || '',
+        path: actualPath,
         dateAdded: this.getTorrentState(torrent.infoHash)?.dateAdded || Date.now(),
         paused: isPaused
       }
