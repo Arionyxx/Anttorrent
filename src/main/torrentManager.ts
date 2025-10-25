@@ -1,8 +1,9 @@
-import WebTorrent from 'webtorrent'
 import { BrowserWindow } from 'electron'
 import Store from 'electron-store'
 import { existsSync, mkdirSync } from 'fs'
-import { join } from 'path'
+
+// Dynamic import for WebTorrent (ES module)
+let WebTorrent: any = null
 
 export interface TorrentInfo {
   infoHash: string
@@ -32,24 +33,36 @@ export interface TorrentInfo {
 }
 
 export class TorrentManager {
-  private client: WebTorrent.Instance
+  private client: any
   private store: Store
   private window: BrowserWindow | null = null
   private updateInterval: NodeJS.Timeout | null = null
   private pausedTorrents: Set<string> = new Set()
+  private initialized: boolean = false
 
   constructor(store: Store) {
+    this.store = store
+  }
+
+  async initialize() {
+    if (this.initialized) return
+    
+    // Dynamically import WebTorrent
+    const WebTorrentModule = await import('webtorrent')
+    WebTorrent = WebTorrentModule.default || WebTorrentModule
+    
     this.client = new WebTorrent({
       maxConns: 55,
       dht: true,
       webSeeds: true
     })
-    this.store = store
 
     // Handle client errors
-    this.client.on('error', (err) => {
+    this.client.on('error', (err: any) => {
       console.error('WebTorrent error:', err)
     })
+
+    this.initialized = true
   }
 
   setWindow(window: BrowserWindow) {
@@ -72,7 +85,7 @@ export class TorrentManager {
   }
 
   private sendTorrentsUpdate() {
-    if (!this.window) return
+    if (!this.window || !this.initialized) return
 
     const torrents = this.getTorrentsInfo()
     this.window.webContents.send('torrents-update', torrents)
@@ -89,7 +102,11 @@ export class TorrentManager {
     this.window.webContents.send('stats-update', stats)
   }
 
-  addTorrent(magnetOrPath: string, options: { path?: string } = {}): Promise<string> {
+  async addTorrent(magnetOrPath: string, options: { path?: string } = {}): Promise<string> {
+    if (!this.initialized) {
+      await this.initialize()
+    }
+
     return new Promise((resolve, reject) => {
       const settings = this.store.get('settings') as any
       const downloadPath = options.path || settings.downloadPath
@@ -102,7 +119,7 @@ export class TorrentManager {
       this.client.add(
         magnetOrPath,
         { path: downloadPath },
-        (torrent) => {
+        (torrent: any) => {
           // Save to store
           this.saveTorrentState(torrent.infoHash, {
             magnetURI: torrent.magnetURI,
@@ -119,7 +136,7 @@ export class TorrentManager {
     })
   }
 
-  private setupTorrentListeners(torrent: WebTorrent.Torrent) {
+  private setupTorrentListeners(torrent: any) {
     torrent.on('done', () => {
       const settings = this.store.get('settings') as any
       
@@ -152,7 +169,7 @@ export class TorrentManager {
       }
     })
 
-    torrent.on('error', (err) => {
+    torrent.on('error', (err: any) => {
       console.error(`Torrent error (${torrent.name}):`, err)
       if (this.window) {
         this.window.webContents.send('torrent-error', {
@@ -162,20 +179,25 @@ export class TorrentManager {
       }
     })
 
-    torrent.on('warning', (warn) => {
+    torrent.on('warning', (warn: any) => {
       console.warn(`Torrent warning (${torrent.name}):`, warn)
     })
   }
 
   removeTorrent(infoHash: string, deleteFiles: boolean = false): Promise<void> {
     return new Promise((resolve, reject) => {
+      if (!this.initialized) {
+        reject(new Error('TorrentManager not initialized'))
+        return
+      }
+
       const torrent = this.client.get(infoHash)
       if (!torrent) {
         reject(new Error('Torrent not found'))
         return
       }
 
-      this.client.remove(infoHash, { destroyStore: deleteFiles }, (err) => {
+      this.client.remove(infoHash, { destroyStore: deleteFiles }, (err: any) => {
         if (err) {
           reject(err)
         } else {
@@ -189,6 +211,8 @@ export class TorrentManager {
   }
 
   pauseTorrent(infoHash: string): boolean {
+    if (!this.initialized) return false
+    
     const torrent = this.client.get(infoHash) as any
     if (!torrent) return false
 
@@ -199,6 +223,8 @@ export class TorrentManager {
   }
 
   resumeTorrent(infoHash: string): boolean {
+    if (!this.initialized) return false
+    
     const torrent = this.client.get(infoHash) as any
     if (!torrent) return false
 
@@ -209,6 +235,8 @@ export class TorrentManager {
   }
 
   pauseAll() {
+    if (!this.initialized) return
+    
     this.client.torrents.forEach((torrent: any) => {
       torrent.pause()
       this.pausedTorrents.add(torrent.infoHash)
@@ -216,6 +244,8 @@ export class TorrentManager {
   }
 
   resumeAll() {
+    if (!this.initialized) return
+    
     this.client.torrents.forEach((torrent: any) => {
       torrent.resume()
       this.pausedTorrents.delete(torrent.infoHash)
@@ -223,6 +253,8 @@ export class TorrentManager {
   }
 
   getTorrentsInfo(): TorrentInfo[] {
+    if (!this.initialized || !this.client) return []
+    
     return this.client.torrents.map((torrent: any) => {
       const isPaused = this.pausedTorrents.has(torrent.infoHash)
       
@@ -255,6 +287,8 @@ export class TorrentManager {
   }
 
   getTorrent(infoHash: string): TorrentInfo | null {
+    if (!this.initialized) return null
+    
     const torrent = this.client.get(infoHash)
     if (!torrent) return null
 
@@ -280,6 +314,10 @@ export class TorrentManager {
   }
 
   async loadSavedTorrents() {
+    if (!this.initialized) {
+      await this.initialize()
+    }
+
     const torrents = this.store.get('torrents', {}) as any
     const settings = this.store.get('settings') as any
 
@@ -303,6 +341,8 @@ export class TorrentManager {
   }
 
   setDownloadLimit(infoHash: string, bytesPerSecond: number) {
+    if (!this.initialized) return
+    
     const torrent = this.client.get(infoHash) as any
     if (torrent && torrent.downloadSpeed) {
       torrent.downloadSpeed = bytesPerSecond
@@ -310,15 +350,21 @@ export class TorrentManager {
   }
 
   setUploadLimit(infoHash: string, bytesPerSecond: number) {
+    if (!this.initialized) return
+    
     const torrent = this.client.get(infoHash) as any
     if (torrent && torrent.uploadSpeed) {
       torrent.uploadSpeed = bytesPerSecond
     }
   }
 
-  async createTorrent(paths: string[], options: any = {}): Promise<WebTorrent.Torrent> {
+  async createTorrent(paths: string[], options: any = {}): Promise<any> {
+    if (!this.initialized) {
+      await this.initialize()
+    }
+
     return new Promise((resolve, reject) => {
-      this.client.seed(paths, options, (torrent) => {
+      this.client.seed(paths, options, (torrent: any) => {
         resolve(torrent)
       })
     })
@@ -326,6 +372,8 @@ export class TorrentManager {
 
   destroy() {
     this.stopUpdateLoop()
-    this.client.destroy()
+    if (this.client) {
+      this.client.destroy()
+    }
   }
 }
