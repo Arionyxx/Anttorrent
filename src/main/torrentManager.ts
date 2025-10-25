@@ -1,8 +1,10 @@
-import WebTorrent from 'webtorrent'
 import { BrowserWindow } from 'electron'
 import Store from 'electron-store'
 import { existsSync, mkdirSync } from 'fs'
 import { join } from 'path'
+
+// WebTorrent will be loaded dynamically
+let WebTorrent: any
 
 export interface TorrentInfo {
   infoHash: string
@@ -32,24 +34,37 @@ export interface TorrentInfo {
 }
 
 export class TorrentManager {
-  private client: WebTorrent.Instance
+  private client: any
   private store: Store
   private window: BrowserWindow | null = null
   private updateInterval: NodeJS.Timeout | null = null
   private pausedTorrents: Set<string> = new Set()
+  private initialized: boolean = false
 
   constructor(store: Store) {
+    this.store = store
+    this.client = null
+  }
+
+  async initialize() {
+    if (this.initialized) return
+    
+    // Dynamically import WebTorrent (ESM module)
+    const WebTorrentModule = await import('webtorrent')
+    WebTorrent = WebTorrentModule.default
+    
     this.client = new WebTorrent({
       maxConns: 55,
       dht: true,
       webSeeds: true
     })
-    this.store = store
 
     // Handle client errors
-    this.client.on('error', (err) => {
+    this.client.on('error', (err: any) => {
       console.error('WebTorrent error:', err)
     })
+    
+    this.initialized = true
   }
 
   setWindow(window: BrowserWindow) {
@@ -89,7 +104,9 @@ export class TorrentManager {
     this.window.webContents.send('stats-update', stats)
   }
 
-  addTorrent(magnetOrPath: string, options: { path?: string; selectedFiles?: number[] } = {}): Promise<string> {
+  async addTorrent(magnetOrPath: string, options: { path?: string; selectedFiles?: number[] } = {}): Promise<string> {
+    await this.initialize()
+    
     return new Promise((resolve, reject) => {
       const settings = this.store.get('settings') as any
       const downloadPath = options.path || settings.downloadPath
@@ -139,7 +156,9 @@ export class TorrentManager {
     })
   }
 
-  getTorrentFiles(magnetOrPath: string): Promise<{ name: string; length: number; path: string }[]> {
+  async getTorrentFiles(magnetOrPath: string): Promise<{ name: string; length: number; path: string }[]> {
+    await this.initialize()
+    
     return new Promise((resolve, reject) => {
       // Create a temporary torrent to get file list
       const tempClient = new WebTorrent({
@@ -177,7 +196,7 @@ export class TorrentManager {
     })
   }
 
-  private setupTorrentListeners(torrent: WebTorrent.Torrent) {
+  private setupTorrentListeners(torrent: any) {
     torrent.on('done', () => {
       const settings = this.store.get('settings') as any
       
@@ -375,7 +394,9 @@ export class TorrentManager {
     }
   }
 
-  async createTorrent(paths: string[], options: any = {}): Promise<WebTorrent.Torrent> {
+  async createTorrent(paths: string[], options: any = {}): Promise<any> {
+    await this.initialize()
+    
     return new Promise((resolve, reject) => {
       this.client.seed(paths, options, (torrent) => {
         resolve(torrent)

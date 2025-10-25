@@ -148,6 +148,7 @@ if (!gotTheLock) {
 
     // Initialize torrent manager
     torrentManager = new TorrentManager(store)
+    await torrentManager.initialize()
     torrentManager.setWindow(mainWindow!)
     torrentManager.startUpdateLoop()
 
