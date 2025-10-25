@@ -1,10 +1,16 @@
-import React, { useState } from 'react'
-import { X, FolderOpen, Link as LinkIcon, FileText } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { X, FolderOpen, Link as LinkIcon, FileText, Check, Minus } from 'lucide-react'
 
 interface AddTorrentModalProps {
   onClose: () => void
-  onAddTorrent: (magnetOrPath: string) => void
+  onAddTorrent: (magnetOrPath: string, selectedFiles?: number[]) => void
   defaultPath: string
+}
+
+interface TorrentFile {
+  name: string
+  length: number
+  path: string
 }
 
 const AddTorrentModal: React.FC<AddTorrentModalProps> = ({
@@ -16,6 +22,10 @@ const AddTorrentModal: React.FC<AddTorrentModalProps> = ({
   const [magnetUrl, setMagnetUrl] = useState('')
   const [savePath, setSavePath] = useState(defaultPath)
   const [startImmediately, setStartImmediately] = useState(true)
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false)
+  const [torrentFiles, setTorrentFiles] = useState<TorrentFile[]>([])
+  const [selectedFiles, setSelectedFiles] = useState<Set<number>>(new Set())
+  const [showFileSelection, setShowFileSelection] = useState(false)
 
   const handleSelectFolder = async () => {
     const folder = await window.electron.selectFolder()
@@ -32,11 +42,57 @@ const AddTorrentModal: React.FC<AddTorrentModalProps> = ({
     }
   }
 
+  const handleLoadFiles = async () => {
+    if (!magnetUrl.trim()) return
+    
+    setIsLoadingFiles(true)
+    try {
+      const files = await window.electron.getTorrentFiles(magnetUrl.trim())
+      if (files && files.length > 0) {
+        setTorrentFiles(files)
+        // Select all files by default
+        setSelectedFiles(new Set(files.map((_, index) => index)))
+        setShowFileSelection(true)
+      }
+    } catch (error) {
+      console.error('Failed to load torrent files:', error)
+    } finally {
+      setIsLoadingFiles(false)
+    }
+  }
+
+  const toggleFileSelection = (index: number) => {
+    const newSelected = new Set(selectedFiles)
+    if (newSelected.has(index)) {
+      newSelected.delete(index)
+    } else {
+      newSelected.add(index)
+    }
+    setSelectedFiles(newSelected)
+  }
+
+  const toggleAllFiles = () => {
+    if (selectedFiles.size === torrentFiles.length) {
+      setSelectedFiles(new Set())
+    } else {
+      setSelectedFiles(new Set(torrentFiles.map((_, index) => index)))
+    }
+  }
+
   const handleSubmit = () => {
     if (activeTab === 'magnet' && magnetUrl.trim()) {
-      onAddTorrent(magnetUrl.trim())
+      const selectedIndices = showFileSelection ? Array.from(selectedFiles) : undefined
+      onAddTorrent(magnetUrl.trim(), selectedIndices)
       onClose()
     }
+  }
+
+  const formatBytes = (bytes: number): string => {
+    if (bytes === 0) return '0 B'
+    const k = 1024
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i]
   }
 
   return (
@@ -68,48 +124,116 @@ const AddTorrentModal: React.FC<AddTorrentModalProps> = ({
 
         {activeTab === 'magnet' && (
           <div className="space-y-4">
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text">Magnet Link or URL</span>
-              </label>
-              <textarea
-                className="textarea textarea-bordered h-24"
-                placeholder="magnet:?xt=urn:btih:..."
-                value={magnetUrl}
-                onChange={(e) => setMagnetUrl(e.target.value)}
-                autoFocus
-              />
-            </div>
+            {!showFileSelection ? (
+              <>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Magnet Link or URL</span>
+                  </label>
+                  <textarea
+                    className="textarea textarea-bordered h-24"
+                    placeholder="magnet:?xt=urn:btih:..."
+                    value={magnetUrl}
+                    onChange={(e) => setMagnetUrl(e.target.value)}
+                    autoFocus
+                  />
+                </div>
 
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text">Save to</span>
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  className="input input-bordered flex-1"
-                  value={savePath}
-                  onChange={(e) => setSavePath(e.target.value)}
-                  readOnly
-                />
-                <button className="btn btn-square" onClick={handleSelectFolder}>
-                  <FolderOpen size={18} />
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Save to</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      className="input input-bordered flex-1"
+                      value={savePath}
+                      onChange={(e) => setSavePath(e.target.value)}
+                      readOnly
+                    />
+                    <button className="btn btn-square" onClick={handleSelectFolder}>
+                      <FolderOpen size={18} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <button 
+                    className="btn btn-outline flex-1" 
+                    onClick={handleLoadFiles}
+                    disabled={!magnetUrl.trim() || isLoadingFiles}
+                  >
+                    {isLoadingFiles ? (
+                      <span className="loading loading-spinner loading-sm"></span>
+                    ) : (
+                      <FileText size={18} />
+                    )}
+                    Select Files
+                  </button>
+                </div>
+
+                <div className="form-control">
+                  <label className="label cursor-pointer justify-start gap-2">
+                    <input
+                      type="checkbox"
+                      className="checkbox"
+                      checked={startImmediately}
+                      onChange={(e) => setStartImmediately(e.target.checked)}
+                    />
+                    <span className="label-text">Start immediately</span>
+                  </label>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-semibold">Select Files to Download</h4>
+                  <button 
+                    className="btn btn-sm btn-outline"
+                    onClick={toggleAllFiles}
+                  >
+                    {selectedFiles.size === torrentFiles.length ? <Minus size={14} /> : <Check size={14} />}
+                    {selectedFiles.size === torrentFiles.length ? 'Deselect All' : 'Select All'}
+                  </button>
+                </div>
+                <div className="overflow-auto max-h-64 border border-base-300 rounded-lg">
+                  <table className="table table-sm table-pin-rows">
+                    <thead>
+                      <tr>
+                        <th className="w-12"></th>
+                        <th>File Name</th>
+                        <th className="text-right">Size</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {torrentFiles.map((file, index) => (
+                        <tr key={index} className="hover">
+                          <td>
+                            <input
+                              type="checkbox"
+                              className="checkbox checkbox-sm"
+                              checked={selectedFiles.has(index)}
+                              onChange={() => toggleFileSelection(index)}
+                            />
+                          </td>
+                          <td className="text-sm">{file.name}</td>
+                          <td className="text-right font-mono text-sm">{formatBytes(file.length)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="text-sm text-base-content/60">
+                  {selectedFiles.size} of {torrentFiles.length} files selected
+                </div>
+                <button 
+                  className="btn btn-sm btn-ghost"
+                  onClick={() => setShowFileSelection(false)}
+                >
+                  Back to Settings
                 </button>
-              </div>
-            </div>
-
-            <div className="form-control">
-              <label className="label cursor-pointer justify-start gap-2">
-                <input
-                  type="checkbox"
-                  className="checkbox"
-                  checked={startImmediately}
-                  onChange={(e) => setStartImmediately(e.target.checked)}
-                />
-                <span className="label-text">Start immediately</span>
-              </label>
-            </div>
+              </>
+            )}
           </div>
         )}
 

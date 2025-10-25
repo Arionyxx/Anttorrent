@@ -89,7 +89,7 @@ export class TorrentManager {
     this.window.webContents.send('stats-update', stats)
   }
 
-  addTorrent(magnetOrPath: string, options: { path?: string } = {}): Promise<string> {
+  addTorrent(magnetOrPath: string, options: { path?: string; selectedFiles?: number[] } = {}): Promise<string> {
     return new Promise((resolve, reject) => {
       const settings = this.store.get('settings') as any
       const downloadPath = options.path || settings.downloadPath
@@ -103,12 +103,32 @@ export class TorrentManager {
         magnetOrPath,
         { path: downloadPath },
         (torrent) => {
-          // Save to store
-          this.saveTorrentState(torrent.infoHash, {
-            magnetURI: torrent.magnetURI,
-            path: downloadPath,
-            dateAdded: Date.now()
-          })
+          // Handle selective file downloads
+          if (options.selectedFiles !== undefined && options.selectedFiles.length > 0) {
+            const selectedSet = new Set(options.selectedFiles)
+            
+            // Deselect all files first
+            torrent.files.forEach((file: any, index: number) => {
+              if (!selectedSet.has(index)) {
+                file.deselect()
+              }
+            })
+            
+            // Save selected files info
+            this.saveTorrentState(torrent.infoHash, {
+              magnetURI: torrent.magnetURI,
+              path: downloadPath,
+              dateAdded: Date.now(),
+              selectedFiles: options.selectedFiles
+            })
+          } else {
+            // Save to store
+            this.saveTorrentState(torrent.infoHash, {
+              magnetURI: torrent.magnetURI,
+              path: downloadPath,
+              dateAdded: Date.now()
+            })
+          }
 
           // Setup torrent event listeners
           this.setupTorrentListeners(torrent)
@@ -116,6 +136,44 @@ export class TorrentManager {
           resolve(torrent.infoHash)
         }
       )
+    })
+  }
+
+  getTorrentFiles(magnetOrPath: string): Promise<{ name: string; length: number; path: string }[]> {
+    return new Promise((resolve, reject) => {
+      // Create a temporary torrent to get file list
+      const tempClient = new WebTorrent({
+        maxConns: 1,
+        dht: false
+      })
+
+      const timeout = setTimeout(() => {
+        tempClient.destroy()
+        reject(new Error('Timeout loading torrent metadata'))
+      }, 30000) // 30 second timeout
+
+      tempClient.add(magnetOrPath, { path: '/tmp' }, (torrent) => {
+        clearTimeout(timeout)
+        
+        const files = torrent.files.map((file: any) => ({
+          name: file.name,
+          length: file.length,
+          path: file.path
+        }))
+
+        // Cleanup
+        tempClient.remove(torrent.infoHash, () => {
+          tempClient.destroy()
+        })
+
+        resolve(files)
+      })
+
+      tempClient.on('error', (err) => {
+        clearTimeout(timeout)
+        tempClient.destroy()
+        reject(err)
+      })
     })
   }
 
@@ -287,9 +345,10 @@ export class TorrentManager {
       try {
         const torrentData = data as any
         
-        // Re-add torrent
+        // Re-add torrent with file selection if saved
         await this.addTorrent(torrentData.magnetURI, {
-          path: torrentData.path
+          path: torrentData.path,
+          selectedFiles: torrentData.selectedFiles
         })
 
         // Restore paused state
