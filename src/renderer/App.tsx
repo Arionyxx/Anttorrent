@@ -117,7 +117,7 @@ function App() {
       if (e.dataTransfer?.files) {
         for (const file of Array.from(e.dataTransfer.files)) {
           if (file.path.endsWith('.torrent')) {
-            await handleAddTorrent(file.path)
+            await handleAddTorrent(file.path, settings?.downloadPath)
           }
         }
       }
@@ -125,7 +125,7 @@ function App() {
       // Check for text (magnet links)
       const text = e.dataTransfer?.getData('text')
       if (text && text.startsWith('magnet:')) {
-        await handleAddTorrent(text)
+        await handleAddTorrent(text, settings?.downloadPath)
       }
     }
 
@@ -161,9 +161,11 @@ function App() {
   }, [settings])
 
   // Torrent operations
-  const handleAddTorrent = async (magnetOrPath: string) => {
+  const handleAddTorrent = async (magnetOrPath: string, customPath?: string, selectedFiles?: number[]) => {
+    const downloadPath = customPath || settings?.downloadPath
+    
     const result = await window.electron.addTorrent(magnetOrPath, {
-      path: settings?.downloadPath
+      path: downloadPath
     })
 
     if (result.success) {
@@ -233,7 +235,7 @@ function App() {
         const files = await window.electron.selectTorrentFile()
         if (files) {
           for (const file of files) {
-            await handleAddTorrent(file)
+            await handleAddTorrent(file, settings?.downloadPath)
           }
         }
       }
@@ -278,7 +280,7 @@ function App() {
     const files = await window.electron.selectTorrentFile()
     if (files) {
       for (const file of files) {
-        await handleAddTorrent(file)
+        await handleAddTorrent(file, settings?.downloadPath)
       }
     }
   }

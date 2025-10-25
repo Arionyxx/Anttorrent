@@ -257,6 +257,7 @@ export class TorrentManager {
     
     return this.client.torrents.map((torrent: any) => {
       const isPaused = this.pausedTorrents.has(torrent.infoHash)
+      const savedState = this.getTorrentState(torrent.infoHash)
       
       return {
         infoHash: torrent.infoHash,
@@ -279,8 +280,8 @@ export class TorrentManager {
           downloaded: file.downloaded,
           progress: file.progress
         })),
-        path: torrent.path || '',
-        dateAdded: this.getTorrentState(torrent.infoHash)?.dateAdded || Date.now(),
+        path: savedState?.path || torrent.path || '',
+        dateAdded: savedState?.dateAdded || Date.now(),
         paused: isPaused
       }
     })

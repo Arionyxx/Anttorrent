@@ -1,10 +1,17 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { X, FolderOpen, Link as LinkIcon, FileText } from 'lucide-react'
 
 interface AddTorrentModalProps {
   onClose: () => void
-  onAddTorrent: (magnetOrPath: string) => void
+  onAddTorrent: (magnetOrPath: string, savePath: string, selectedFiles?: number[]) => void
   defaultPath: string
+}
+
+interface TorrentFile {
+  name: string
+  length: number
+  path: string
+  selected: boolean
 }
 
 const AddTorrentModal: React.FC<AddTorrentModalProps> = ({
@@ -16,6 +23,9 @@ const AddTorrentModal: React.FC<AddTorrentModalProps> = ({
   const [magnetUrl, setMagnetUrl] = useState('')
   const [savePath, setSavePath] = useState(defaultPath)
   const [startImmediately, setStartImmediately] = useState(true)
+  const [torrentFiles, setTorrentFiles] = useState<TorrentFile[]>([])
+  const [showFileSelection, setShowFileSelection] = useState(false)
+  const [selectedTorrentPath, setSelectedTorrentPath] = useState('')
 
   const handleSelectFolder = async () => {
     const folder = await window.electron.selectFolder()
@@ -27,21 +37,51 @@ const AddTorrentModal: React.FC<AddTorrentModalProps> = ({
   const handleSelectFile = async () => {
     const files = await window.electron.selectTorrentFile()
     if (files && files.length > 0) {
-      files.forEach(file => onAddTorrent(file))
+      // For now, just add them with the selected path
+      for (const file of files) {
+        onAddTorrent(file, savePath)
+      }
       onClose()
     }
   }
 
   const handleSubmit = () => {
     if (activeTab === 'magnet' && magnetUrl.trim()) {
-      onAddTorrent(magnetUrl.trim())
+      const selectedIndices = torrentFiles
+        .map((f, i) => (f.selected ? i : -1))
+        .filter(i => i !== -1)
+      
+      onAddTorrent(magnetUrl.trim(), savePath, selectedIndices.length > 0 ? selectedIndices : undefined)
       onClose()
     }
   }
 
+  const toggleFileSelection = (index: number) => {
+    setTorrentFiles(prev => 
+      prev.map((file, i) => 
+        i === index ? { ...file, selected: !file.selected } : file
+      )
+    )
+  }
+
+  const toggleAllFiles = () => {
+    const allSelected = torrentFiles.every(f => f.selected)
+    setTorrentFiles(prev => 
+      prev.map(file => ({ ...file, selected: !allSelected }))
+    )
+  }
+
+  const formatBytes = (bytes: number): string => {
+    if (bytes === 0) return '0 B'
+    const k = 1024
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i]
+  }
+
   return (
     <div className="modal modal-open">
-      <div className="modal-box max-w-2xl">
+      <div className="modal-box max-w-4xl max-h-[90vh]">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-lg">Add Torrent</h3>
           <button className="btn btn-sm btn-circle btn-ghost" onClick={onClose}>
@@ -79,24 +119,29 @@ const AddTorrentModal: React.FC<AddTorrentModalProps> = ({
                 onChange={(e) => setMagnetUrl(e.target.value)}
                 autoFocus
               />
+              <label className="label">
+                <span className="label-text-alt">Paste your magnet link or torrent URL here</span>
+              </label>
             </div>
 
             <div className="form-control">
               <label className="label">
-                <span className="label-text">Save to</span>
+                <span className="label-text font-semibold">Save to</span>
               </label>
               <div className="flex gap-2">
                 <input
                   type="text"
                   className="input input-bordered flex-1"
                   value={savePath}
-                  onChange={(e) => setSavePath(e.target.value)}
                   readOnly
                 />
                 <button className="btn btn-square" onClick={handleSelectFolder}>
                   <FolderOpen size={18} />
                 </button>
               </div>
+              <label className="label">
+                <span className="label-text-alt">Choose where to save the downloaded files</span>
+              </label>
             </div>
 
             <div className="form-control">
@@ -107,9 +152,39 @@ const AddTorrentModal: React.FC<AddTorrentModalProps> = ({
                   checked={startImmediately}
                   onChange={(e) => setStartImmediately(e.target.checked)}
                 />
-                <span className="label-text">Start immediately</span>
+                <span className="label-text">Start download immediately</span>
               </label>
             </div>
+
+            {torrentFiles.length > 0 && (
+              <div className="border border-base-300 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-semibold">Select Files to Download</h4>
+                  <button className="btn btn-xs" onClick={toggleAllFiles}>
+                    {torrentFiles.every(f => f.selected) ? 'Deselect All' : 'Select All'}
+                  </button>
+                </div>
+                <div className="max-h-60 overflow-y-auto">
+                  {torrentFiles.map((file, index) => (
+                    <label key={index} className="flex items-center gap-2 py-2 hover:bg-base-200 px-2 rounded cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="checkbox checkbox-sm"
+                        checked={file.selected}
+                        onChange={() => toggleFileSelection(index)}
+                      />
+                      <div className="flex-1">
+                        <div className="text-sm">{file.name}</div>
+                        <div className="text-xs text-base-content/60">{formatBytes(file.length)}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                <div className="mt-2 text-sm text-base-content/60">
+                  {torrentFiles.filter(f => f.selected).length} of {torrentFiles.length} files selected
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -127,20 +202,22 @@ const AddTorrentModal: React.FC<AddTorrentModalProps> = ({
 
             <div className="form-control">
               <label className="label">
-                <span className="label-text">Save to</span>
+                <span className="label-text font-semibold">Save to</span>
               </label>
               <div className="flex gap-2">
                 <input
                   type="text"
                   className="input input-bordered flex-1"
                   value={savePath}
-                  onChange={(e) => setSavePath(e.target.value)}
                   readOnly
                 />
                 <button className="btn btn-square" onClick={handleSelectFolder}>
                   <FolderOpen size={18} />
                 </button>
               </div>
+              <label className="label">
+                <span className="label-text-alt">Choose where to save the downloaded files</span>
+              </label>
             </div>
           </div>
         )}
