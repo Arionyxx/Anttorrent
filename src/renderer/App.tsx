@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import WebTorrent from 'webtorrent'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
 import TorrentTable from './components/TorrentTable'
@@ -8,9 +7,7 @@ import AddTorrentModal from './components/AddTorrentModal'
 import SettingsModal from './components/SettingsModal'
 import StatusBar from './components/StatusBar'
 import { TorrentData, Settings, GlobalStats } from './types'
-import { Search, Plus } from 'lucide-react'
-
-const client = new WebTorrent()
+import { Search, Plus, PlayCircle, PauseCircle } from 'lucide-react'
 
 function App() {
   const [torrents, setTorrents] = useState<TorrentData[]>([])
@@ -27,6 +24,8 @@ function App() {
     totalDownloaded: 0,
     totalUploaded: 0
   })
+  const [dragOver, setDragOver] = useState(false)
+  const dropZoneRef = useRef<HTMLDivElement>(null)
 
   // Load settings
   useEffect(() => {
@@ -40,57 +39,43 @@ function App() {
     }
   }, [settings?.theme])
 
-  // Update torrents state from WebTorrent client
-  const updateTorrents = useCallback(() => {
-    const torrentData: TorrentData[] = client.torrents.map((torrent: any) => ({
-      infoHash: torrent.infoHash,
-      name: torrent.name || 'Unknown',
-      magnetURI: torrent.magnetURI,
-      size: torrent.length || 0,
-      downloaded: torrent.downloaded,
-      uploaded: torrent.uploaded,
-      downloadSpeed: torrent.downloadSpeed,
-      uploadSpeed: torrent.uploadSpeed,
-      progress: torrent.progress,
-      ratio: torrent.uploaded / (torrent.downloaded || 1),
-      numPeers: torrent.numPeers,
-      timeRemaining: torrent.timeRemaining,
-      status: torrent.paused ? 'paused' : torrent.done ? 'seeding' : 'downloading',
-      files: torrent.files.map((file: any) => ({
-        name: file.name,
-        path: file.path,
-        length: file.length,
-        downloaded: file.downloaded,
-        progress: file.progress
-      })),
-      path: torrent.path || '',
-      dateAdded: Date.now()
-    }))
-
-    setTorrents(torrentData)
-
-    // Update global stats
-    const stats: GlobalStats = {
-      downloadSpeed: torrentData.reduce((sum, t) => sum + t.downloadSpeed, 0),
-      uploadSpeed: torrentData.reduce((sum, t) => sum + t.uploadSpeed, 0),
-      numActive: torrentData.filter(t => t.status === 'downloading' || t.status === 'seeding').length,
-      totalDownloaded: torrentData.reduce((sum, t) => sum + t.downloaded, 0),
-      totalUploaded: torrentData.reduce((sum, t) => sum + t.uploaded, 0)
-    }
-    setGlobalStats(stats)
-
-    // Update tray
-    window.electron.updateTrayStats({
-      downloadSpeed: formatSpeed(stats.downloadSpeed),
-      uploadSpeed: formatSpeed(stats.uploadSpeed)
-    })
-  }, [])
-
-  // Update torrents periodically
+  // Listen for torrent updates from main process
   useEffect(() => {
-    const interval = setInterval(updateTorrents, 1000)
-    return () => clearInterval(interval)
-  }, [updateTorrents])
+    window.electron.onTorrentsUpdate((updatedTorrents) => {
+      setTorrents(updatedTorrents)
+    })
+
+    window.electron.onStatsUpdate((stats) => {
+      setGlobalStats(stats)
+      
+      // Update tray
+      window.electron.updateTrayStats({
+        downloadSpeed: formatSpeed(stats.downloadSpeed),
+        uploadSpeed: formatSpeed(stats.uploadSpeed)
+      })
+    })
+
+    window.electron.onTorrentDone((infoHash) => {
+      const torrent = torrents.find(t => t.infoHash === infoHash)
+      if (torrent && settings?.showNotifications) {
+        window.electron.showNotification({
+          title: 'Download Complete',
+          body: torrent.name
+        })
+      }
+    })
+
+    window.electron.onTorrentError((data) => {
+      console.error(`Torrent error ${data.infoHash}:`, data.error)
+    })
+
+    return () => {
+      window.electron.removeAllListeners('torrents-update')
+      window.electron.removeAllListeners('stats-update')
+      window.electron.removeAllListeners('torrent-done')
+      window.electron.removeAllListeners('torrent-error')
+    }
+  }, [torrents, settings])
 
   // Handle external torrent opens
   useEffect(() => {
@@ -110,56 +95,115 @@ function App() {
     }
   }, [])
 
+  // Drag and Drop handlers
+  useEffect(() => {
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setDragOver(true)
+    }
+
+    const handleDragLeave = (e: DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setDragOver(false)
+    }
+
+    const handleDrop = async (e: DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setDragOver(false)
+
+      if (e.dataTransfer?.files) {
+        for (const file of Array.from(e.dataTransfer.files)) {
+          if (file.path.endsWith('.torrent')) {
+            await handleAddTorrent(file.path)
+          }
+        }
+      }
+
+      // Check for text (magnet links)
+      const text = e.dataTransfer?.getData('text')
+      if (text && text.startsWith('magnet:')) {
+        await handleAddTorrent(text)
+      }
+    }
+
+    const element = dropZoneRef.current
+    if (element) {
+      element.addEventListener('dragover', handleDragOver)
+      element.addEventListener('dragleave', handleDragLeave)
+      element.addEventListener('drop', handleDrop)
+
+      return () => {
+        element.removeEventListener('dragover', handleDragOver)
+        element.removeEventListener('dragleave', handleDragLeave)
+        element.removeEventListener('drop', handleDrop)
+      }
+    }
+  }, [settings])
+
+  // Clipboard monitoring for magnet links
+  useEffect(() => {
+    const checkClipboard = async () => {
+      try {
+        const text = await navigator.clipboard.readText()
+        if (text.startsWith('magnet:') && settings?.showNotifications) {
+          // Could add a notification here asking if user wants to add the magnet link
+        }
+      } catch (err) {
+        // Clipboard access denied or not available
+      }
+    }
+
+    const interval = setInterval(checkClipboard, 5000)
+    return () => clearInterval(interval)
+  }, [settings])
+
   // Torrent operations
-  const handleAddTorrent = (magnetOrPath: string) => {
-    const downloadPath = settings?.downloadPath || ''
-    client.add(magnetOrPath, { path: downloadPath }, (torrent: any) => {
-      updateTorrents()
+  const handleAddTorrent = async (magnetOrPath: string) => {
+    const result = await window.electron.addTorrent(magnetOrPath, {
+      path: settings?.downloadPath
+    })
+
+    if (result.success) {
       if (settings?.showNotifications) {
         window.electron.showNotification({
           title: 'Torrent Added',
-          body: torrent.name
+          body: 'Download started'
         })
       }
-    })
-  }
-
-  const handleRemoveTorrent = (infoHash: string, deleteFiles: boolean = false) => {
-    const torrent = client.get(infoHash)
-    if (torrent) {
-      client.remove(infoHash, { destroyStore: deleteFiles }, () => {
-        updateTorrents()
-        if (selectedTorrent === infoHash) {
-          setSelectedTorrent(null)
-        }
-      })
+    } else {
+      alert(`Failed to add torrent: ${result.error}`)
     }
   }
 
-  const handlePauseTorrent = (infoHash: string) => {
-    const torrent = client.get(infoHash) as any
-    if (torrent) {
-      torrent.pause()
-      updateTorrents()
+  const handleRemoveTorrent = async (infoHash: string, deleteFiles: boolean = false) => {
+    const result = await window.electron.removeTorrent(infoHash, deleteFiles)
+    
+    if (!result.success) {
+      alert(`Failed to remove torrent: ${result.error}`)
+    }
+
+    if (selectedTorrent === infoHash) {
+      setSelectedTorrent(null)
     }
   }
 
-  const handleResumeTorrent = (infoHash: string) => {
-    const torrent = client.get(infoHash) as any
-    if (torrent) {
-      torrent.resume()
-      updateTorrents()
-    }
+  const handlePauseTorrent = async (infoHash: string) => {
+    await window.electron.pauseTorrent(infoHash)
   }
 
-  const handlePauseAll = () => {
-    client.torrents.forEach((torrent: any) => torrent.pause())
-    updateTorrents()
+  const handleResumeTorrent = async (infoHash: string) => {
+    await window.electron.resumeTorrent(infoHash)
   }
 
-  const handleResumeAll = () => {
-    client.torrents.forEach((torrent: any) => torrent.resume())
-    updateTorrents()
+  const handlePauseAll = async () => {
+    await window.electron.pauseAllTorrents()
+  }
+
+  const handleResumeAll = async () => {
+    await window.electron.resumeAllTorrents()
   }
 
   // Filter torrents
@@ -182,15 +226,21 @@ function App() {
 
   // Keyboard shortcuts
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const handleKeyDown = async (e: KeyboardEvent) => {
       // Ctrl+O: Open torrent
       if (e.ctrlKey && e.key === 'o') {
         e.preventDefault()
-        window.electron.selectTorrentFile().then(files => {
-          if (files) {
-            files.forEach(handleAddTorrent)
+        const files = await window.electron.selectTorrentFile()
+        if (files) {
+          for (const file of files) {
+            await handleAddTorrent(file)
           }
-        })
+        }
+      }
+      // Ctrl+U: Add from URL/Magnet
+      if (e.ctrlKey && e.key === 'u') {
+        e.preventDefault()
+        setShowAddModal(true)
       }
       // Ctrl+,: Settings
       if (e.ctrlKey && e.key === ',') {
@@ -201,29 +251,57 @@ function App() {
       if (e.key === 'Delete' && selectedTorrent) {
         e.preventDefault()
         const deleteFiles = confirm('Delete files from disk?')
-        handleRemoveTorrent(selectedTorrent, deleteFiles)
+        await handleRemoveTorrent(selectedTorrent, deleteFiles)
       }
       // Space: Pause/Resume
       if (e.key === ' ' && selectedTorrent) {
         e.preventDefault()
         const torrent = torrents.find(t => t.infoHash === selectedTorrent)
         if (torrent?.status === 'paused') {
-          handleResumeTorrent(selectedTorrent)
+          await handleResumeTorrent(selectedTorrent)
         } else {
-          handlePauseTorrent(selectedTorrent)
+          await handlePauseTorrent(selectedTorrent)
         }
+      }
+      // Ctrl+A: Select all (could be implemented)
+      if (e.ctrlKey && e.key === 'a') {
+        e.preventDefault()
+        // Multi-select functionality could be added
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedTorrent, torrents])
+  }, [selectedTorrent, torrents, settings])
+
+  const handleOpenTorrentFile = async () => {
+    const files = await window.electron.selectTorrentFile()
+    if (files) {
+      for (const file of files) {
+        await handleAddTorrent(file)
+      }
+    }
+  }
 
   return (
-    <div className="h-screen flex flex-col bg-base-100">
+    <div 
+      ref={dropZoneRef}
+      className={`h-screen flex flex-col bg-base-100 ${dragOver ? 'ring-4 ring-primary ring-inset' : ''}`}
+    >
       <TitleBar
         onSettingsClick={() => setShowSettingsModal(true)}
       />
+
+      {dragOver && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-base-100/90 backdrop-blur-sm">
+          <div className="card bg-primary text-primary-content w-96">
+            <div className="card-body items-center text-center">
+              <h2 className="card-title text-2xl">Drop Torrent Files Here</h2>
+              <p>Release to add torrents</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
@@ -238,10 +316,39 @@ function App() {
             <button
               className="btn btn-primary btn-sm gap-2"
               onClick={() => setShowAddModal(true)}
+              title="Add magnet link (Ctrl+U)"
             >
               <Plus size={16} />
-              Add Torrent
+              Add Magnet
             </button>
+
+            <button
+              className="btn btn-secondary btn-sm gap-2"
+              onClick={handleOpenTorrentFile}
+              title="Open torrent file (Ctrl+O)"
+            >
+              <Plus size={16} />
+              Add File
+            </button>
+
+            <div className="btn-group">
+              <button
+                className="btn btn-sm gap-2"
+                onClick={handleResumeAll}
+                title="Resume all"
+              >
+                <PlayCircle size={16} />
+                Resume All
+              </button>
+              <button
+                className="btn btn-sm gap-2"
+                onClick={handlePauseAll}
+                title="Pause all"
+              >
+                <PauseCircle size={16} />
+                Pause All
+              </button>
+            </div>
 
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/50" size={16} />
@@ -304,9 +411,9 @@ function App() {
         <SettingsModal
           settings={settings}
           onClose={() => setShowSettingsModal(false)}
-          onSave={(newSettings) => {
+          onSave={async (newSettings) => {
             setSettings(newSettings)
-            window.electron.setSettings(newSettings)
+            await window.electron.setSettings(newSettings)
             setShowSettingsModal(false)
           }}
         />

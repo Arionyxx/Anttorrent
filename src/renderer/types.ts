@@ -78,6 +78,24 @@ declare global {
       onOpenTorrent: (callback: (url: string) => void) => void
       onTrayAction: (callback: (action: string) => void) => void
       removeAllListeners: (channel: string) => void
+      
+      // Torrent operations
+      addTorrent: (magnetOrPath: string, options?: { path?: string }) => Promise<{ success: boolean; infoHash?: string; error?: string }>
+      removeTorrent: (infoHash: string, deleteFiles: boolean) => Promise<{ success: boolean; error?: string }>
+      pauseTorrent: (infoHash: string) => Promise<boolean>
+      resumeTorrent: (infoHash: string) => Promise<boolean>
+      pauseAllTorrents: () => Promise<boolean>
+      resumeAllTorrents: () => Promise<boolean>
+      getTorrents: () => Promise<TorrentData[]>
+      getTorrent: (infoHash: string) => Promise<TorrentData | null>
+      setDownloadLimit: (infoHash: string, bytesPerSecond: number) => Promise<boolean>
+      setUploadLimit: (infoHash: string, bytesPerSecond: number) => Promise<boolean>
+      
+      // Event listeners
+      onTorrentsUpdate: (callback: (torrents: TorrentData[]) => void) => void
+      onStatsUpdate: (callback: (stats: GlobalStats) => void) => void
+      onTorrentDone: (callback: (infoHash: string) => void) => void
+      onTorrentError: (callback: (data: { infoHash: string; error: string }) => void) => void
     }
   }
 }

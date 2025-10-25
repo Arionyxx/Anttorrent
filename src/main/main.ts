@@ -3,6 +3,7 @@ import { join } from 'path'
 import Store from 'electron-store'
 import { createTray, updateTrayMenu } from './tray'
 import { setupProtocolHandler } from './protocol'
+import { TorrentManager } from './torrentManager'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
@@ -43,6 +44,7 @@ const store = new Store({
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
+let torrentManager: TorrentManager
 
 function createWindow(): void {
   const windowState = store.get('windowState') as any
@@ -134,7 +136,7 @@ if (!gotTheLock) {
     }
   })
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     // Set app user model id for windows
     if (process.platform === 'win32') {
       app.setAppUserModelId('com.anttorrent.app')
@@ -143,6 +145,14 @@ if (!gotTheLock) {
     createWindow()
     createTray(mainWindow!)
     setupProtocolHandler()
+
+    // Initialize torrent manager
+    torrentManager = new TorrentManager(store)
+    torrentManager.setWindow(mainWindow!)
+    torrentManager.startUpdateLoop()
+
+    // Load saved torrents
+    await torrentManager.loadSavedTorrents()
 
     // Global shortcut to show/hide window
     globalShortcut.register('CommandOrControl+Alt+T', () => {
@@ -180,6 +190,9 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   isQuitting = true
   globalShortcut.unregisterAll()
+  if (torrentManager) {
+    torrentManager.destroy()
+  }
 })
 
 // IPC Handlers
@@ -290,4 +303,59 @@ ipcMain.handle('get-app-path', (_, name: string) => {
 ipcMain.on('quit-app', () => {
   isQuitting = true
   app.quit()
+})
+
+// Torrent operations
+ipcMain.handle('add-torrent', async (_, magnetOrPath: string, options?: { path?: string }) => {
+  try {
+    const infoHash = await torrentManager.addTorrent(magnetOrPath, options)
+    return { success: true, infoHash }
+  } catch (err: any) {
+    return { success: false, error: err.message }
+  }
+})
+
+ipcMain.handle('remove-torrent', async (_, infoHash: string, deleteFiles: boolean) => {
+  try {
+    await torrentManager.removeTorrent(infoHash, deleteFiles)
+    return { success: true }
+  } catch (err: any) {
+    return { success: false, error: err.message }
+  }
+})
+
+ipcMain.handle('pause-torrent', (_, infoHash: string) => {
+  return torrentManager.pauseTorrent(infoHash)
+})
+
+ipcMain.handle('resume-torrent', (_, infoHash: string) => {
+  return torrentManager.resumeTorrent(infoHash)
+})
+
+ipcMain.handle('pause-all-torrents', () => {
+  torrentManager.pauseAll()
+  return true
+})
+
+ipcMain.handle('resume-all-torrents', () => {
+  torrentManager.resumeAll()
+  return true
+})
+
+ipcMain.handle('get-torrents', () => {
+  return torrentManager.getTorrentsInfo()
+})
+
+ipcMain.handle('get-torrent', (_, infoHash: string) => {
+  return torrentManager.getTorrent(infoHash)
+})
+
+ipcMain.handle('set-download-limit', (_, infoHash: string, bytesPerSecond: number) => {
+  torrentManager.setDownloadLimit(infoHash, bytesPerSecond)
+  return true
+})
+
+ipcMain.handle('set-upload-limit', (_, infoHash: string, bytesPerSecond: number) => {
+  torrentManager.setUploadLimit(infoHash, bytesPerSecond)
+  return true
 })

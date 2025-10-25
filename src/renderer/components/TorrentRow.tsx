@@ -1,6 +1,7 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Play, Pause, Trash2, FolderOpen, Copy } from 'lucide-react'
 import { TorrentData } from '../types'
+import ContextMenu from './ContextMenu'
 
 interface TorrentRowProps {
   torrent: TorrentData
@@ -19,9 +20,11 @@ const TorrentRow: React.FC<TorrentRowProps> = ({
   onResume,
   onRemove
 }) => {
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault()
-    // Context menu would be implemented here
+    setContextMenu({ x: e.clientX, y: e.clientY })
   }
 
   const handleRemove = () => {
@@ -108,6 +111,28 @@ const TorrentRow: React.FC<TorrentRowProps> = ({
       </td>
       <td className="text-center">{statusBadge()}</td>
     </tr>
+    
+    {contextMenu && (
+      <ContextMenu
+        x={contextMenu.x}
+        y={contextMenu.y}
+        onClose={() => setContextMenu(null)}
+        torrent={{
+          infoHash: torrent.infoHash,
+          name: torrent.name,
+          magnetURI: torrent.magnetURI,
+          path: torrent.path,
+          status: torrent.status
+        }}
+        onPause={() => onPause(torrent.infoHash)}
+        onResume={() => onResume(torrent.infoHash)}
+        onRemove={(deleteFiles) => onRemove(torrent.infoHash, deleteFiles)}
+        onOpenFolder={() => window.electron.showItemInFolder(torrent.path)}
+        onCopyMagnet={() => navigator.clipboard.writeText(torrent.magnetURI)}
+        onCopyHash={() => navigator.clipboard.writeText(torrent.infoHash)}
+      />
+    )}
+  </>
   )
 }
 
