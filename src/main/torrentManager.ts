@@ -259,6 +259,21 @@ export class TorrentManager {
       const isPaused = this.pausedTorrents.has(torrent.infoHash)
       const savedState = this.getTorrentState(torrent.infoHash)
       
+      // Determine status
+      let status: 'downloading' | 'seeding' | 'paused' | 'error' | 'queued'
+      if (isPaused) {
+        status = 'paused'
+      } else if (torrent.progress >= 1 || torrent.done) {
+        // Completed download, now seeding
+        status = 'seeding'
+      } else if (torrent.progress > 0) {
+        // Actively downloading
+        status = 'downloading'
+      } else {
+        // Waiting to start
+        status = 'queued'
+      }
+      
       return {
         infoHash: torrent.infoHash,
         name: torrent.name || 'Unknown',
@@ -272,7 +287,7 @@ export class TorrentManager {
         ratio: torrent.uploaded / (torrent.downloaded || 1),
         numPeers: torrent.numPeers,
         timeRemaining: torrent.timeRemaining,
-        status: isPaused ? 'paused' : torrent.done ? 'seeding' : 'downloading',
+        status: status,
         files: torrent.files.map((file: any) => ({
           name: file.name,
           path: file.path,
