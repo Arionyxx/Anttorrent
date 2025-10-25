@@ -125,12 +125,12 @@ const TorrentRow: React.FC<TorrentRowProps> = ({
             path: torrent.path,
             status: torrent.status
           }}
-          onPause={() => onPause(torrent.infoHash)}
-          onResume={() => onResume(torrent.infoHash)}
-          onRemove={(deleteFiles) => onRemove(torrent.infoHash, deleteFiles)}
-          onOpenFolder={() => window.electron.showItemInFolder(torrent.path)}
-          onCopyMagnet={() => navigator.clipboard.writeText(torrent.magnetURI)}
-          onCopyHash={() => navigator.clipboard.writeText(torrent.infoHash)}
+                  onPause={() => onPause(torrent.infoHash)}
+        onResume={() => onResume(torrent.infoHash)}
+        onRemove={(deleteFiles) => onRemove(torrent.infoHash, deleteFiles)}
+        onOpenFolder={() => window.electron.openFolder(torrent.path)}
+        onCopyMagnet={() => navigator.clipboard.writeText(torrent.magnetURI)}
+        onCopyHash={() => navigator.clipboard.writeText(torrent.infoHash)}
         />
       )}
     </>

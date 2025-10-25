@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('electron', {
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectTorrentFile: () => ipcRenderer.invoke('select-torrent-file'),
   showItemInFolder: (path: string) => ipcRenderer.invoke('show-item-in-folder', path),
+  openFolder: (path: string) => ipcRenderer.invoke('open-folder', path),
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
   
   // Notifications
@@ -81,5 +82,13 @@ contextBridge.exposeInMainWorld('electron', {
   },
   onTorrentError: (callback: (data: { infoHash: string; error: string }) => void) => {
     ipcRenderer.on('torrent-error', (_, data) => callback(data))
-  }
+  },
+
+  // Get torrent metadata before adding
+  getTorrentMetadata: (magnetUri: string) => 
+    ipcRenderer.invoke('get-torrent-metadata', magnetUri),
+  
+  // Add torrent with file selection
+  addTorrentWithFiles: (magnetOrPath: string, options?: { path?: string; fileIndices?: number[] }) => 
+    ipcRenderer.invoke('add-torrent-with-files', magnetOrPath, options)
 })

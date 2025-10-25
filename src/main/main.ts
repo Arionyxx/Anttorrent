@@ -270,6 +270,10 @@ ipcMain.handle('show-item-in-folder', (_, path: string) => {
   shell.showItemInFolder(path)
 })
 
+ipcMain.handle('open-folder', (_, path: string) => {
+  shell.openPath(path)
+})
+
 ipcMain.handle('open-external', (_, url: string) => {
   shell.openExternal(url)
 })
@@ -358,4 +362,24 @@ ipcMain.handle('set-download-limit', (_, infoHash: string, bytesPerSecond: numbe
 ipcMain.handle('set-upload-limit', (_, infoHash: string, bytesPerSecond: number) => {
   torrentManager.setUploadLimit(infoHash, bytesPerSecond)
   return true
+})
+
+// Get torrent metadata (for file selection before adding)
+ipcMain.handle('get-torrent-metadata', async (_, magnetUri: string) => {
+  try {
+    const metadata = await torrentManager.getTorrentMetadata(magnetUri)
+    return { success: true, metadata }
+  } catch (err: any) {
+    return { success: false, error: err.message }
+  }
+})
+
+// Add torrent with file selection
+ipcMain.handle('add-torrent-with-files', async (_, magnetOrPath: string, options?: { path?: string; fileIndices?: number[] }) => {
+  try {
+    const infoHash = await torrentManager.addTorrentWithFileSelection(magnetOrPath, options)
+    return { success: true, infoHash }
+  } catch (err: any) {
+    return { success: false, error: err.message }
+  }
 })

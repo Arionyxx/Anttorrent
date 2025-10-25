@@ -69,6 +69,7 @@ declare global {
       selectFolder: () => Promise<string | null>
       selectTorrentFile: () => Promise<string[] | null>
       showItemInFolder: (path: string) => Promise<void>
+      openFolder: (path: string) => Promise<void>
       openExternal: (url: string) => Promise<void>
       showNotification: (options: { title: string; body: string }) => Promise<void>
       updateTrayStats: (stats: { downloadSpeed: string; uploadSpeed: string }) => void
@@ -96,6 +97,10 @@ declare global {
       onStatsUpdate: (callback: (stats: GlobalStats) => void) => void
       onTorrentDone: (callback: (infoHash: string) => void) => void
       onTorrentError: (callback: (data: { infoHash: string; error: string }) => void) => void
+      
+      // Torrent metadata and file selection
+      getTorrentMetadata: (magnetUri: string) => Promise<{ success: boolean; metadata?: { name: string; files: { name: string; length: number; path: string }[] }; error?: string }>
+      addTorrentWithFiles: (magnetOrPath: string, options?: { path?: string; fileIndices?: number[] }) => Promise<{ success: boolean; infoHash?: string; error?: string }>
     }
   }
 }

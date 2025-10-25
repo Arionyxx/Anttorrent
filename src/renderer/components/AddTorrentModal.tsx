@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { X, FolderOpen, Link as LinkIcon, FileText } from 'lucide-react'
+import { X, FolderOpen, Link as LinkIcon, FileText, Loader } from 'lucide-react'
 
 interface AddTorrentModalProps {
   onClose: () => void
@@ -24,8 +24,9 @@ const AddTorrentModal: React.FC<AddTorrentModalProps> = ({
   const [savePath, setSavePath] = useState(defaultPath)
   const [startImmediately, setStartImmediately] = useState(true)
   const [torrentFiles, setTorrentFiles] = useState<TorrentFile[]>([])
-  const [showFileSelection, setShowFileSelection] = useState(false)
-  const [selectedTorrentPath, setSelectedTorrentPath] = useState('')
+  const [loadingMetadata, setLoadingMetadata] = useState(false)
+  const [metadataError, setMetadataError] = useState('')
+  const [torrentName, setTorrentName] = useState('')
 
   const handleSelectFolder = async () => {
     const folder = await window.electron.selectFolder()
@@ -45,14 +46,63 @@ const AddTorrentModal: React.FC<AddTorrentModalProps> = ({
     }
   }
 
-  const handleSubmit = () => {
+  const handleFetchMetadata = async () => {
+    if (!magnetUrl.trim()) return
+
+    setLoadingMetadata(true)
+    setMetadataError('')
+    setTorrentFiles([])
+
+    try {
+      const result = await window.electron.getTorrentMetadata(magnetUrl.trim())
+      
+      if (result.success && result.metadata) {
+        setTorrentName(result.metadata.name)
+        setTorrentFiles(
+          result.metadata.files.map(file => ({
+            ...file,
+            selected: true // All files selected by default
+          }))
+        )
+      } else {
+        setMetadataError(result.error || 'Failed to fetch torrent metadata')
+      }
+    } catch (err: any) {
+      setMetadataError(err.message || 'Failed to fetch torrent metadata')
+    } finally {
+      setLoadingMetadata(false)
+    }
+  }
+
+  const handleSubmit = async () => {
     if (activeTab === 'magnet' && magnetUrl.trim()) {
       const selectedIndices = torrentFiles
         .map((f, i) => (f.selected ? i : -1))
         .filter(i => i !== -1)
       
-      onAddTorrent(magnetUrl.trim(), savePath, selectedIndices.length > 0 ? selectedIndices : undefined)
-      onClose()
+      // Use the new addTorrentWithFiles method if files are selected
+      if (torrentFiles.length > 0 && selectedIndices.length < torrentFiles.length) {
+        const result = await window.electron.addTorrentWithFiles(magnetUrl.trim(), {
+          path: savePath,
+          fileIndices: selectedIndices
+        })
+        
+        if (result.success) {
+          if (window.electron.showNotification) {
+            window.electron.showNotification({
+              title: 'Torrent Added',
+              body: `${torrentName || 'Download'} started with ${selectedIndices.length} files`
+            })
+          }
+          onClose()
+        } else {
+          setMetadataError(result.error || 'Failed to add torrent')
+        }
+      } else {
+        // Add all files
+        onAddTorrent(magnetUrl.trim(), savePath)
+        onClose()
+      }
     }
   }
 
@@ -112,17 +162,80 @@ const AddTorrentModal: React.FC<AddTorrentModalProps> = ({
               <label className="label">
                 <span className="label-text">Magnet Link or URL</span>
               </label>
-              <textarea
-                className="textarea textarea-bordered h-24"
-                placeholder="magnet:?xt=urn:btih:..."
-                value={magnetUrl}
-                onChange={(e) => setMagnetUrl(e.target.value)}
-                autoFocus
-              />
+              <div className="flex gap-2">
+                <textarea
+                  className="textarea textarea-bordered h-24 flex-1"
+                  placeholder="magnet:?xt=urn:btih:..."
+                  value={magnetUrl}
+                  onChange={(e) => setMagnetUrl(e.target.value)}
+                  autoFocus
+                />
+                <button 
+                  className="btn btn-primary"
+                  onClick={handleFetchMetadata}
+                  disabled={!magnetUrl.trim() || loadingMetadata}
+                >
+                  {loadingMetadata ? (
+                    <>
+                      <Loader size={16} className="animate-spin" />
+                      Loading...
+                    </>
+                  ) : (
+                    'Get Files'
+                  )}
+                </button>
+              </div>
               <label className="label">
-                <span className="label-text-alt">Paste your magnet link or torrent URL here</span>
+                <span className="label-text-alt">Paste magnet link and click "Get Files" to select which files to download</span>
               </label>
             </div>
+
+            {metadataError && (
+              <div className="alert alert-error">
+                <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <span>{metadataError}</span>
+              </div>
+            )}
+
+            {loadingMetadata && (
+              <div className="alert alert-info">
+                <Loader size={20} className="animate-spin" />
+                <span>Fetching torrent metadata... This may take a few seconds.</span>
+              </div>
+            )}
+
+            {torrentFiles.length > 0 && (
+              <div className="border border-base-300 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-semibold">
+                    {torrentName && <div className="text-sm text-base-content/70 mb-1">{torrentName}</div>}
+                    Select Files to Download
+                  </h4>
+                  <button className="btn btn-xs" onClick={toggleAllFiles}>
+                    {torrentFiles.every(f => f.selected) ? 'Deselect All' : 'Select All'}
+                  </button>
+                </div>
+                <div className="max-h-60 overflow-y-auto">
+                  {torrentFiles.map((file, index) => (
+                    <label key={index} className="flex items-center gap-2 py-2 hover:bg-base-200 px-2 rounded cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="checkbox checkbox-sm"
+                        checked={file.selected}
+                        onChange={() => toggleFileSelection(index)}
+                      />
+                      <div className="flex-1">
+                        <div className="text-sm">{file.name}</div>
+                        <div className="text-xs text-base-content/60">{formatBytes(file.length)}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                <div className="mt-2 text-sm text-base-content/60">
+                  {torrentFiles.filter(f => f.selected).length} of {torrentFiles.length} files selected
+                </div>
+              </div>
+            )}
 
             <div className="form-control">
               <label className="label">
@@ -155,36 +268,6 @@ const AddTorrentModal: React.FC<AddTorrentModalProps> = ({
                 <span className="label-text">Start download immediately</span>
               </label>
             </div>
-
-            {torrentFiles.length > 0 && (
-              <div className="border border-base-300 rounded-lg p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="font-semibold">Select Files to Download</h4>
-                  <button className="btn btn-xs" onClick={toggleAllFiles}>
-                    {torrentFiles.every(f => f.selected) ? 'Deselect All' : 'Select All'}
-                  </button>
-                </div>
-                <div className="max-h-60 overflow-y-auto">
-                  {torrentFiles.map((file, index) => (
-                    <label key={index} className="flex items-center gap-2 py-2 hover:bg-base-200 px-2 rounded cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="checkbox checkbox-sm"
-                        checked={file.selected}
-                        onChange={() => toggleFileSelection(index)}
-                      />
-                      <div className="flex-1">
-                        <div className="text-sm">{file.name}</div>
-                        <div className="text-xs text-base-content/60">{formatBytes(file.length)}</div>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-                <div className="mt-2 text-sm text-base-content/60">
-                  {torrentFiles.filter(f => f.selected).length} of {torrentFiles.length} files selected
-                </div>
-              </div>
-            )}
           </div>
         )}
 
@@ -230,9 +313,11 @@ const AddTorrentModal: React.FC<AddTorrentModalProps> = ({
             <button
               className="btn btn-primary"
               onClick={handleSubmit}
-              disabled={!magnetUrl.trim()}
+              disabled={!magnetUrl.trim() || loadingMetadata}
             >
-              Add Torrent
+              {torrentFiles.length > 0 
+                ? `Add ${torrentFiles.filter(f => f.selected).length} Selected Files`
+                : 'Add Torrent'}
             </button>
           )}
         </div>

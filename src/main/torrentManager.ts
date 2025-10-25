@@ -371,6 +371,84 @@ export class TorrentManager {
     })
   }
 
+  async getTorrentMetadata(magnetUri: string): Promise<{ name: string; files: { name: string; length: number; path: string }[] }> {
+    if (!this.initialized) {
+      await this.initialize()
+    }
+
+    return new Promise((resolve, reject) => {
+      // Create a temporary torrent to get metadata without downloading
+      const tempClient = new WebTorrent()
+      
+      tempClient.add(magnetUri, { path: '/tmp' }, (torrent: any) => {
+        const metadata = {
+          name: torrent.name,
+          files: torrent.files.map((file: any) => ({
+            name: file.name,
+            length: file.length,
+            path: file.path
+          }))
+        }
+        
+        // Remove the temporary torrent
+        tempClient.remove(torrent.infoHash, { destroyStore: true })
+        tempClient.destroy()
+        
+        resolve(metadata)
+      })
+
+      // Timeout after 30 seconds
+      setTimeout(() => {
+        tempClient.destroy()
+        reject(new Error('Failed to fetch torrent metadata (timeout)'))
+      }, 30000)
+    })
+  }
+
+  async addTorrentWithFileSelection(magnetOrPath: string, options: { path?: string; fileIndices?: number[] } = {}): Promise<string> {
+    if (!this.initialized) {
+      await this.initialize()
+    }
+
+    return new Promise((resolve, reject) => {
+      const settings = this.store.get('settings') as any
+      const downloadPath = options.path || settings.downloadPath
+
+      // Ensure download directory exists
+      if (!existsSync(downloadPath)) {
+        mkdirSync(downloadPath, { recursive: true })
+      }
+
+      this.client.add(
+        magnetOrPath,
+        { path: downloadPath },
+        (torrent: any) => {
+          // Deselect files that user doesn't want
+          if (options.fileIndices && options.fileIndices.length > 0) {
+            torrent.files.forEach((file: any, index: number) => {
+              if (!options.fileIndices!.includes(index)) {
+                file.deselect()
+              }
+            })
+          }
+
+          // Save to store
+          this.saveTorrentState(torrent.infoHash, {
+            magnetURI: torrent.magnetURI,
+            path: downloadPath,
+            dateAdded: Date.now(),
+            selectedFiles: options.fileIndices
+          })
+
+          // Setup torrent event listeners
+          this.setupTorrentListeners(torrent)
+
+          resolve(torrent.infoHash)
+        }
+      )
+    })
+  }
+
   destroy() {
     this.stopUpdateLoop()
     if (this.client) {

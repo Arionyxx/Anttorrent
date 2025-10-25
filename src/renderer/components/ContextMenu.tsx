@@ -84,7 +84,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
         <li>
           <a onClick={() => { onOpenFolder(); onClose() }}>
             <FolderOpen size={16} />
-            Open Folder
+            Open Download Folder
           </a>
         </li>
 
