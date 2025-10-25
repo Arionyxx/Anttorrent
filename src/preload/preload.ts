@@ -48,8 +48,10 @@ contextBridge.exposeInMainWorld('electron', {
   },
 
   // Torrent operations
-  addTorrent: (magnetOrPath: string, options?: { path?: string }) => 
+  addTorrent: (magnetOrPath: string, options?: { path?: string; selectedFiles?: number[] }) => 
     ipcRenderer.invoke('add-torrent', magnetOrPath, options),
+  getTorrentFiles: (magnetOrPath: string) =>
+    ipcRenderer.invoke('get-torrent-files', magnetOrPath),
   removeTorrent: (infoHash: string, deleteFiles: boolean) => 
     ipcRenderer.invoke('remove-torrent', infoHash, deleteFiles),
   pauseTorrent: (infoHash: string) => 

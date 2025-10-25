@@ -161,9 +161,10 @@ function App() {
   }, [settings])
 
   // Torrent operations
-  const handleAddTorrent = async (magnetOrPath: string) => {
+  const handleAddTorrent = async (magnetOrPath: string, selectedFiles?: number[]) => {
     const result = await window.electron.addTorrent(magnetOrPath, {
-      path: settings?.downloadPath
+      path: settings?.downloadPath,
+      selectedFiles
     })
 
     if (result.success) {

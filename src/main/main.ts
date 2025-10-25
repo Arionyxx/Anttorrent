@@ -306,12 +306,22 @@ ipcMain.on('quit-app', () => {
 })
 
 // Torrent operations
-ipcMain.handle('add-torrent', async (_, magnetOrPath: string, options?: { path?: string }) => {
+ipcMain.handle('add-torrent', async (_, magnetOrPath: string, options?: { path?: string; selectedFiles?: number[] }) => {
   try {
     const infoHash = await torrentManager.addTorrent(magnetOrPath, options)
     return { success: true, infoHash }
   } catch (err: any) {
     return { success: false, error: err.message }
+  }
+})
+
+ipcMain.handle('get-torrent-files', async (_, magnetOrPath: string) => {
+  try {
+    const files = await torrentManager.getTorrentFiles(magnetOrPath)
+    return files
+  } catch (err: any) {
+    console.error('Failed to get torrent files:', err)
+    return null
   }
 })
 
