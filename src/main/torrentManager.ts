@@ -53,15 +53,37 @@ export class TorrentManager {
     const WebTorrentModule = await import('webtorrent')
     WebTorrent = WebTorrentModule.default
     
-    this.client = new WebTorrent({
-      maxConns: 55,
-      dht: true,
-      webSeeds: true
-    })
+    // Try to create client with random ports to avoid permission issues
+    let port = Math.floor(Math.random() * (65535 - 10000) + 10000)
+    
+    try {
+      this.client = new WebTorrent({
+        maxConns: 55,
+        dht: {
+          port: 0 // Use random available port
+        },
+        torrentPort: 0, // Use random available port
+        webSeeds: true,
+        utp: true
+      })
+    } catch (err) {
+      console.error('Failed to create WebTorrent client:', err)
+      // Fallback: try without UTP
+      this.client = new WebTorrent({
+        maxConns: 55,
+        dht: false,
+        webSeeds: true,
+        utp: false
+      })
+    }
 
     // Handle client errors
     this.client.on('error', (err: any) => {
       console.error('WebTorrent error:', err)
+      // Don't crash on permission errors, just log them
+      if (err.code === 'EACCES') {
+        console.warn('Permission denied - this may affect DHT functionality')
+      }
     })
     
     this.initialized = true
@@ -161,9 +183,12 @@ export class TorrentManager {
     
     return new Promise((resolve, reject) => {
       // Create a temporary torrent to get file list
+      // Use random port to avoid conflicts
       const tempClient = new WebTorrent({
         maxConns: 1,
-        dht: false
+        dht: false,
+        utp: false, // Disable UTP to avoid permission issues
+        torrentPort: 0 // Use random available port
       })
 
       const timeout = setTimeout(() => {

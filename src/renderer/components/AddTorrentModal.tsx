@@ -53,9 +53,12 @@ const AddTorrentModal: React.FC<AddTorrentModalProps> = ({
         // Select all files by default
         setSelectedFiles(new Set(files.map((_, index) => index)))
         setShowFileSelection(true)
+      } else {
+        alert('Failed to load torrent files. This could be due to:\n\n1. No peers available\n2. Invalid magnet link\n3. Network/firewall issues\n\nTry adding the torrent without file selection, or try a different torrent.')
       }
     } catch (error) {
       console.error('Failed to load torrent files:', error)
+      alert('Error loading torrent metadata. You can still add the torrent without file selection.')
     } finally {
       setIsLoadingFiles(false)
     }
