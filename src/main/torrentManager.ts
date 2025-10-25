@@ -379,8 +379,12 @@ export class TorrentManager {
     return new Promise((resolve, reject) => {
       // Create a temporary torrent to get metadata without downloading
       const tempClient = new WebTorrent()
+      let resolved = false
       
       tempClient.add(magnetUri, { path: '/tmp' }, (torrent: any) => {
+        if (resolved) return
+        resolved = true
+        
         const metadata = {
           name: torrent.name,
           files: torrent.files.map((file: any) => ({
@@ -390,16 +394,39 @@ export class TorrentManager {
           }))
         }
         
-        // Remove the temporary torrent
-        tempClient.remove(torrent.infoHash, { destroyStore: true })
-        tempClient.destroy()
+        // Clean up
+        try {
+          torrent.destroy()
+          tempClient.destroy()
+        } catch (err) {
+          // Ignore cleanup errors
+        }
         
         resolve(metadata)
       })
 
+      tempClient.on('error', (err: any) => {
+        if (resolved) return
+        resolved = true
+        
+        try {
+          tempClient.destroy()
+        } catch (e) {
+          // Ignore
+        }
+        reject(new Error(`Failed to fetch metadata: ${err.message}`))
+      })
+
       // Timeout after 30 seconds
       setTimeout(() => {
-        tempClient.destroy()
+        if (resolved) return
+        resolved = true
+        
+        try {
+          tempClient.destroy()
+        } catch (e) {
+          // Ignore
+        }
         reject(new Error('Failed to fetch torrent metadata (timeout)'))
       }, 30000)
     })
