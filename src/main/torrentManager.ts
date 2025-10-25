@@ -343,11 +343,38 @@ export class TorrentManager {
         }
       }
       
+      // Calculate actual size based on selected files only
+      // Deselected files don't count towards the total size
+      let actualSize = 0
+      const torrentState = this.getTorrentState(torrent.infoHash)
+      
+      if (torrent.files && torrent.files.length > 0) {
+        // If we have saved selected files info, use that
+        if (torrentState?.selectedFiles && Array.isArray(torrentState.selectedFiles)) {
+          const selectedSet = new Set(torrentState.selectedFiles)
+          torrent.files.forEach((file: any, index: number) => {
+            if (selectedSet.has(index)) {
+              actualSize += file.length
+            }
+          })
+        } else {
+          // No selection info = all files selected
+          torrent.files.forEach((file: any) => {
+            actualSize += file.length
+          })
+        }
+      }
+      
+      // Fallback to torrent.length if no files or calculation fails
+      if (actualSize === 0) {
+        actualSize = torrent.length || 0
+      }
+      
       return {
         infoHash: torrent.infoHash,
         name: torrent.name || 'Unknown',
         magnetURI: torrent.magnetURI,
-        size: torrent.length || 0,
+        size: actualSize,
         downloaded: torrent.downloaded,
         uploaded: torrent.uploaded,
         downloadSpeed: isPaused ? 0 : torrent.downloadSpeed,
