@@ -45,5 +45,41 @@ contextBridge.exposeInMainWorld('electron', {
   // Remove listeners
   removeAllListeners: (channel: string) => {
     ipcRenderer.removeAllListeners(channel)
+  },
+
+  // Torrent operations
+  addTorrent: (magnetOrPath: string, options?: { path?: string }) => 
+    ipcRenderer.invoke('add-torrent', magnetOrPath, options),
+  removeTorrent: (infoHash: string, deleteFiles: boolean) => 
+    ipcRenderer.invoke('remove-torrent', infoHash, deleteFiles),
+  pauseTorrent: (infoHash: string) => 
+    ipcRenderer.invoke('pause-torrent', infoHash),
+  resumeTorrent: (infoHash: string) => 
+    ipcRenderer.invoke('resume-torrent', infoHash),
+  pauseAllTorrents: () => 
+    ipcRenderer.invoke('pause-all-torrents'),
+  resumeAllTorrents: () => 
+    ipcRenderer.invoke('resume-all-torrents'),
+  getTorrents: () => 
+    ipcRenderer.invoke('get-torrents'),
+  getTorrent: (infoHash: string) => 
+    ipcRenderer.invoke('get-torrent', infoHash),
+  setDownloadLimit: (infoHash: string, bytesPerSecond: number) => 
+    ipcRenderer.invoke('set-download-limit', infoHash, bytesPerSecond),
+  setUploadLimit: (infoHash: string, bytesPerSecond: number) => 
+    ipcRenderer.invoke('set-upload-limit', infoHash, bytesPerSecond),
+
+  // Event listeners for torrent updates
+  onTorrentsUpdate: (callback: (torrents: any[]) => void) => {
+    ipcRenderer.on('torrents-update', (_, torrents) => callback(torrents))
+  },
+  onStatsUpdate: (callback: (stats: any) => void) => {
+    ipcRenderer.on('stats-update', (_, stats) => callback(stats))
+  },
+  onTorrentDone: (callback: (infoHash: string) => void) => {
+    ipcRenderer.on('torrent-done', (_, infoHash) => callback(infoHash))
+  },
+  onTorrentError: (callback: (data: { infoHash: string; error: string }) => void) => {
+    ipcRenderer.on('torrent-error', (_, data) => callback(data))
   }
 })

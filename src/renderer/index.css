@@ -50,3 +50,85 @@ textarea,
 .selectable {
   user-select: text;
 }
+
+/* Animation classes */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-slide-in {
+  animation: slideIn 200ms ease-out;
+}
+
+.animate-pulse-slow {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Progress bar improvements */
+.progress {
+  transition: value 300ms ease-in-out;
+}
+
+/* Table row hover effect */
+tr.hover:hover {
+  transform: scale(1.001);
+  box-shadow: 0 2px 8px oklch(var(--bc) / 0.1);
+}
+
+/* Drag over effect */
+.drag-over {
+  background: oklch(var(--p) / 0.1);
+  border: 2px dashed oklch(var(--p));
+}
+
+/* Context menu animation */
+.context-menu {
+  animation: slideIn 150ms ease-out;
+}
+
+/* Badge glow effect */
+.badge-info {
+  box-shadow: 0 0 10px oklch(var(--in) / 0.3);
+}
+
+.badge-success {
+  box-shadow: 0 0 10px oklch(var(--su) / 0.3);
+}
+
+.badge-warning {
+  box-shadow: 0 0 10px oklch(var(--wa) / 0.3);
+}
+
+.badge-error {
+  box-shadow: 0 0 10px oklch(var(--er) / 0.3);
+}
+
+/* Loading spinner */
+.loading-spinner {
+  border: 3px solid oklch(var(--bc) / 0.2);
+  border-top-color: oklch(var(--p));
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

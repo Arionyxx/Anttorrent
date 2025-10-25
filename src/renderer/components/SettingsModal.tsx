@@ -350,11 +350,46 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onClose, onSave
                   <select
                     className="select select-bordered"
                     value={localSettings.theme}
-                    onChange={(e) => setLocalSettings({ ...localSettings, theme: e.target.value })}
+                    onChange={(e) => {
+                      const newTheme = e.target.value
+                      setLocalSettings({ ...localSettings, theme: newTheme })
+                      // Preview theme immediately
+                      document.documentElement.setAttribute('data-theme', newTheme)
+                    }}
                   >
-                    <option value="night">Night (Dark)</option>
-                    <option value="dark">Dark</option>
-                    <option value="light">Light</option>
+                    <optgroup label="Dark Themes">
+                      <option value="night">Night</option>
+                      <option value="dark">Dark</option>
+                      <option value="black">Black</option>
+                      <option value="business">Business</option>
+                      <option value="dracula">Dracula</option>
+                      <option value="luxury">Luxury</option>
+                      <option value="coffee">Coffee</option>
+                      <option value="synthwave">Synthwave</option>
+                      <option value="halloween">Halloween</option>
+                      <option value="forest">Forest</option>
+                    </optgroup>
+                    <optgroup label="Light Themes">
+                      <option value="light">Light</option>
+                      <option value="cupcake">Cupcake</option>
+                      <option value="bumblebee">Bumblebee</option>
+                      <option value="emerald">Emerald</option>
+                      <option value="corporate">Corporate</option>
+                      <option value="retro">Retro</option>
+                      <option value="cyberpunk">Cyberpunk</option>
+                      <option value="valentine">Valentine</option>
+                      <option value="garden">Garden</option>
+                      <option value="aqua">Aqua</option>
+                      <option value="lofi">Lofi</option>
+                      <option value="pastel">Pastel</option>
+                      <option value="fantasy">Fantasy</option>
+                      <option value="wireframe">Wireframe</option>
+                      <option value="cmyk">CMYK</option>
+                      <option value="autumn">Autumn</option>
+                      <option value="acid">Acid</option>
+                      <option value="lemonade">Lemonade</option>
+                      <option value="winter">Winter</option>
+                    </optgroup>
                   </select>
                 </div>
 
